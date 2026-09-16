@@ -1,4 +1,5 @@
 import { equipmentRepository } from '../repositories/equipment.repository.js';
+import { requestsRepository } from '../repositories/requests.repository.js';
 import { NotFoundError, ConflictError } from '../errors/index.js';
 
 export const equipmentService = {
@@ -21,12 +22,20 @@ export const equipmentService = {
   },
 
   async update(id, patch) {
-    await this.getById(id); 
+    await this.getById(id);
     return equipmentRepository.update(id, patch);
   },
 
   async delete(id) {
     await this.getById(id);
+
+    const open = await requestsRepository.findOpenByEquipmentId(id);
+    if (open.length > 0) {
+      throw new ConflictError(
+        `Нельзя удалить оборудование: есть открытые заявки (${open.length})`
+      );
+    }
+
     return equipmentRepository.delete(id);
   },
 };
