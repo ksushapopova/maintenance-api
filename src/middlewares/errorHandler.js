@@ -4,6 +4,16 @@ import { config } from '../config/index.js';
 export function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
+  if (err.message && err.message.startsWith('CORS:')) {
+    return res.status(403).json({
+      error: {
+        code: 'CORS_FORBIDDEN',
+        message: err.message,
+        requestId: req.id,
+      },
+    });
+  }
+
   if (err instanceof AppError) {
     const body = {
       error: {
