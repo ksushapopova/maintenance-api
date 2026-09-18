@@ -3,10 +3,14 @@ import { ValidationError } from '../errors/index.js';
 export function validate(schemas) {
   return (req, res, next) => {
     const details = [];
+    const validated = {};
 
     for (const source of ['body', 'params', 'query']) {
       const schema = schemas[source];
-      if (!schema) continue;
+      if (!schema) {
+        validated[source] = req[source];
+        continue;
+      }
 
       const { error, value } = schema.validate(req[source] ?? {}, {
         abortEarly: false,
@@ -22,7 +26,7 @@ export function validate(schemas) {
           });
         }
       } else {
-        req[source] = value;
+        validated[source] = value;
       }
     }
 
@@ -30,6 +34,7 @@ export function validate(schemas) {
       return next(new ValidationError('Некорректные данные запроса', details));
     }
 
+    req.validated = validated;
     next();
   };
 }

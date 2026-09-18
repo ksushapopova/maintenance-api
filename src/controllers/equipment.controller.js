@@ -21,30 +21,33 @@ function parseListQuery(q) {
 
 export const equipmentController = {
   list: asyncHandler(async (req, res) => {
-    const result = await equipmentService.list(parseListQuery(req.query));
+    const q = req.validated?.query ?? req.query;
+    const result = await equipmentService.list(parseListQuery(q));
     res.json(result);
   }),
 
   getById: asyncHandler(async (req, res) => {
-    const item = await equipmentService.getById(req.params.id);
+    const id = req.validated?.params?.id ?? req.params.id;
+    const item = await equipmentService.getById(id);
     res.json(item);
   }),
 
   create: asyncHandler(async (req, res) => {
-    const item = await equipmentService.create(req.body);
-    res
-      .status(201)
-      .location(`/api/equipment/${item.id}`)
-      .json(item);
+    const data = req.validated?.body ?? req.body;
+    const item = await equipmentService.create(data);
+    res.status(201).location(`/api/equipment/${item.id}`).json(item);
   }),
 
   update: asyncHandler(async (req, res) => {
-    const item = await equipmentService.update(req.params.id, req.body);
+    const id = req.validated?.params?.id ?? req.params.id;
+    const patch = req.validated?.body ?? req.body;
+    const item = await equipmentService.update(id, patch);
     res.json(item);
   }),
 
   delete: asyncHandler(async (req, res) => {
-    await equipmentService.delete(req.params.id);
+    const id = req.validated?.params?.id ?? req.params.id;
+    await equipmentService.delete(id);
     res.status(204).end();
   }),
 };

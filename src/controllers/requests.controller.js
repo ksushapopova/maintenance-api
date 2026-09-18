@@ -23,40 +23,47 @@ function parseListQuery(q) {
 
 export const requestsController = {
   list: asyncHandler(async (req, res) => {
-    const result = await requestsService.list(parseListQuery(req.query));
+    const q = req.validated?.query ?? req.query;
+    const result = await requestsService.list(parseListQuery(q));
     res.json(result);
   }),
 
   listByEquipment: asyncHandler(async (req, res) => {
-    const result = await requestsService.listByEquipmentId(
-      req.params.id,
-      parseListQuery(req.query)
-    );
+    const id = req.validated?.params?.id ?? req.params.id;
+    const q = req.validated?.query ?? req.query;
+    const result = await requestsService.listByEquipmentId(id, parseListQuery(q));
     res.json(result);
   }),
 
   getById: asyncHandler(async (req, res) => {
-    const item = await requestsService.getById(req.params.id);
+    const id = req.validated?.params?.id ?? req.params.id;
+    const item = await requestsService.getById(id);
     res.json(item);
   }),
 
   create: asyncHandler(async (req, res) => {
-    const item = await requestsService.create(req.body);
+    const data = req.validated?.body ?? req.body;
+    const item = await requestsService.create(data);
     res.status(201).location(`/api/requests/${item.id}`).json(item);
   }),
 
   update: asyncHandler(async (req, res) => {
-    const item = await requestsService.update(req.params.id, req.body);
+    const id = req.validated?.params?.id ?? req.params.id;
+    const patch = req.validated?.body ?? req.body;
+    const item = await requestsService.update(id, patch);
     res.json(item);
   }),
 
   changeStatus: asyncHandler(async (req, res) => {
-    const item = await requestsService.changeStatus(req.params.id, req.body.status);
+    const id = req.validated?.params?.id ?? req.params.id;
+    const newStatus = req.validated?.body?.status ?? req.body.status;
+    const item = await requestsService.changeStatus(id, newStatus);
     res.json(item);
   }),
 
   delete: asyncHandler(async (req, res) => {
-    await requestsService.delete(req.params.id);
+    const id = req.validated?.params?.id ?? req.params.id;
+    await requestsService.delete(id);
     res.status(204).end();
   }),
 };
