@@ -7,14 +7,14 @@ const equipmentStatuses = ['operational', 'maintenance', 'fault', 'decommissione
 const locationSchema = Joi.object({
   lat: Joi.number().min(-90).max(90).required(),
   lon: Joi.number().min(-180).max(180).required(),
-}).required();
+});
 
 export const createEquipmentSchema = {
   body: Joi.object({
     name: Joi.string().min(3).max(100).required(),
     type: Joi.string().valid(...equipmentTypes).required(),
     serialNumber: Joi.string().min(1).max(100).required(),
-    location: locationSchema,
+    location: locationSchema.required(),
     status: Joi.string().valid(...equipmentStatuses).required(),
     installedAt: Joi.date().iso().less('now').required(),
   }),
