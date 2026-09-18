@@ -9,6 +9,11 @@ import { apiRateLimiter } from './middlewares/rateLimiter.js';
 import { notFound } from './middlewares/notFound.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 import { requireApiKey } from './middlewares/apiKey.js';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = join(__dirname, '..', 'public');
 
 export function createApp() {
   const app = express();
@@ -35,6 +40,8 @@ export function createApp() {
 
   app.use(express.json({ limit: config.bodyLimit }));
 
+  app.use(express.static(PUBLIC_DIR));
+  
   app.use('/api', apiRateLimiter);
 
   app.use('/api', requireApiKey);

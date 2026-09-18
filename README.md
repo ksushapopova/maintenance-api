@@ -425,3 +425,26 @@ HTTP-запрос → middleware → routes → controllers → services → rep
 - repositories — единственное место, которое знает, где хранятся данные.
 
 Замена JSON на PostgreSQL затронет только слой `repositories`.
+
+Аутентификация
+
+Изменяющие операции (POST, PATCH, DELETE) требуют заголовок `X-API-Key` со значением из переменной окружения `API_KEY`. GET-запросы публичны.
+
+Значение по умолчанию для локальной разработки: `dev-secret-key`.
+
+Пример:
+
+```bash
+curl -X POST http://localhost:3000/api/equipment \
+  -H "X-API-Key: dev-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{ ... }'
+```
+
+HTML-страница
+
+Простая страница для просмотра и создания заявок: `public/index.html`.
+Отдаётся тем же Express-сервером по адресу `http://localhost:3000/`.
+
+- Список заявок — `GET /api/requests`.
+- Создание заявки — `POST /api/requests` с заголовком `X-API-Key`.
