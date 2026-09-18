@@ -8,6 +8,7 @@ import { requestLogger } from './middlewares/logger.js';
 import { apiRateLimiter } from './middlewares/rateLimiter.js';
 import { notFound } from './middlewares/notFound.js';
 import { errorHandler } from './middlewares/errorHandler.js';
+import { requireApiKey } from './middlewares/apiKey.js';
 
 export function createApp() {
   const app = express();
@@ -35,6 +36,8 @@ export function createApp() {
   app.use(express.json({ limit: config.bodyLimit }));
 
   app.use('/api', apiRateLimiter);
+
+  app.use('/api', requireApiKey);
 
   app.use('/api', router);
 
