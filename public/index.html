@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maintenance API — заявки</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Заявки на обслуживание</h1>
+    <p>Просмотр и создание заявок через REST API.</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>Список заявок</h2>
+      <div class="toolbar">
+        <button id="refresh" type="button">Обновить</button>
+        <span id="list-status" class="status"></span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Оборудование</th>
+            <th>Заголовок</th>
+            <th>Приоритет</th>
+            <th>Статус</th>
+            <th>Плановая дата</th>
+          </tr>
+        </thead>
+        <tbody id="requests-body"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Создать заявку</h2>
+      <form id="create-form">
+        <label>
+          ID оборудования
+          <input name="equipmentId" required placeholder="e1da0966-..." />
+        </label>
+        <label>
+          Заголовок
+          <input name="title" required minlength="5" maxlength="120" />
+        </label>
+        <label>
+          Описание
+          <textarea name="description" maxlength="2000"></textarea>
+        </label>
+        <label>
+          Приоритет
+          <select name="priority" required>
+            <option value="low">low</option>
+            <option value="medium" selected>medium</option>
+            <option value="high">high</option>
+            <option value="critical">critical</option>
+          </select>
+        </label>
+        <label>
+          Плановая дата и время
+          <input name="plannedAt" type="datetime-local" />
+        </label>
+        <label>
+          X-API-Key
+          <input name="apiKey" value="dev-secret-key" />
+        </label>
+        <button type="submit">Создать</button>
+      </form>
+      <p id="form-status" class="status"></p>
+    </section>
+  </main>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
