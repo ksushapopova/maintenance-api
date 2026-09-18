@@ -24,4 +24,5 @@ export const config = {
   weatherApiUrl: env('WEATHER_API_URL', 'https://api.open-meteo.com/v1/forecast'),
   geocodingApiUrl: env('GEOCODING_API_URL', 'https://geocoding-api.open-meteo.com/v1/search'),
   requestTimeoutMs: Number(env('REQUEST_TIMEOUT_MS', '5000')),
+  apiKey: env('API_KEY', 'dev-secret-key'),
 };
