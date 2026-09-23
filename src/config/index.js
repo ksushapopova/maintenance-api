@@ -25,4 +25,18 @@ export const config = {
   geocodingApiUrl: env('GEOCODING_API_URL', 'https://geocoding-api.open-meteo.com/v1/search'),
   requestTimeoutMs: Number(env('REQUEST_TIMEOUT_MS', '5000')),
   apiKey: env('API_KEY', 'dev-secret-key'),
+  db: {
+    host: env('DB_HOST', 'localhost'),
+    port: Number(env('DB_PORT', '5432')),
+    name: env('DB_NAME', 'maintenance'),
+    user: env('DB_USER', 'maintenance'),
+    password: env('DB_PASSWORD', 'maintenance'),
+    logging: env('DB_LOGGING', 'false') === 'true',
+    pool: {
+      max: Number(env('DB_POOL_MAX', '10')),
+      min: Number(env('DB_POOL_MIN', '0')),
+      acquire: Number(env('DB_POOL_ACQUIRE', '30000')),
+      idle: Number(env('DB_POOL_IDLE', '10000')),
+    },
+  },
 };
