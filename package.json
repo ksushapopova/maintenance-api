@@ -13,7 +13,13 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:migrate": "sequelize-cli db:migrate",
+    "db:migrate:undo": "sequelize-cli db:migrate:undo:all",
+    "db:migrate:redo": "npm run db:migrate:undo && npm run db:migrate",
+    "db:seed": "sequelize-cli db:seed:all",
+    "db:seed:undo": "sequelize-cli db:seed:undo:all",
+    "db:reset": "npm run db:migrate:undo && npm run db:migrate && npm run db:seed"
   },
   "keywords": [
     "express",
@@ -30,6 +36,9 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "joi": "^18.2.9",
+    "pg": "^8.23.0",
+    "sequelize": "^6.37.8",
+    "umzug": "^3.8.3",
     "uuid": "^14.0.2"
   },
   "devDependencies": {
@@ -37,6 +46,7 @@
     "jest": "^30.5.1",
     "nodemon": "^3.1.14",
     "prettier": "^3.9.7",
+    "sequelize-cli": "^6.6.5",
     "supertest": "^7.2.2"
   }
 }
