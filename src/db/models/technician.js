@@ -21,6 +21,18 @@ export default function defineTechnician(sequelize) {
         unique: true,
         field: 'employee_number',
       },
+      createdAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'created_at',
+        defaultValue: DataTypes.NOW,
+      },
+      updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+        defaultValue: DataTypes.NOW,
+      },
     },
     {
       tableName: 'technicians',

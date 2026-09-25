@@ -30,6 +30,18 @@ export default function defineMaintenanceRequest(sequelize) {
         allowNull: true,
         field: 'planned_at',
       },
+      createdAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'created_at',
+        defaultValue: DataTypes.NOW,
+      },
+      updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+        defaultValue: DataTypes.NOW,
+      },
       author: { type: DataTypes.STRING(150), allowNull: true },
     },
     {
