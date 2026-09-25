@@ -1,117 +1,134 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { v4 as uuid } from 'uuid';
+import { Op } from 'sequelize';
 
-const DATA_DIR = join(process.cwd(), 'data');
-const FILE = join(DATA_DIR, 'requests.json');
+import {
+  MaintenanceRequest,
+  Equipment,
+  Site,
+  RequestAssignee,
+  Technician,
+} from '../db/models/index.js';
+import { withSequelizeErrors } from './errors.js';
 
-async function loadAll() {
-  try {
-    const raw = await readFile(FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    throw err;
-  }
+const SORTABLE = ['title', 'priority', 'status', 'planned_at', 'created_at'];
+
+function buildOrder(sort) {
+  const field = sort?.field && SORTABLE.includes(sort.field) ? sort.field : 'createdAt';
+  const dir = sort?.order === 'desc' ? 'DESC' : 'ASC';
+  return [[field, dir]];
 }
 
-async function saveAll(items) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(FILE, JSON.stringify(items, null, 2), 'utf8');
-}
+const REQUEST_ATTRIBUTES = [
+  'id', 'equipmentId', 'title', 'description', 'priority', 'status',
+  'plannedAt', 'author', 'createdAt', 'updatedAt',
+];
 
-function applyQuery(items, { filters = {}, sort = {}, page = 1, limit = 10 }) {
-  let result = [...items];
+const EQUIPMENT_SHORT = ['id', 'name', 'type', 'serialNumber', 'status'];
 
-  if (filters.equipmentId) {
-    result = result.filter((r) => r.equipmentId === filters.equipmentId);
-  }
-  if (filters.status) {
-    result = result.filter((r) => r.status === filters.status);
-  }
-  if (filters.priority) {
-    result = result.filter((r) => r.priority === filters.priority);
-  }
-  if (filters.plannedFrom) {
-    result = result.filter((r) => r.plannedAt && r.plannedAt >= filters.plannedFrom);
-  }
-  if (filters.plannedTo) {
-    result = result.filter((r) => r.plannedAt && r.plannedAt <= filters.plannedTo);
-  }
-
-  if (sort.field) {
-    const dir = sort.order === 'desc' ? -1 : 1;
-    result.sort((a, b) => {
-      if (a[sort.field] === b[sort.field]) return 0;
-      return a[sort.field] > b[sort.field] ? dir : -dir;
-    });
-  }
-
-  const total = result.length;
-  const start = (page - 1) * limit;
-  const data = result.slice(start, start + limit);
-
-  return { data, total, page, limit };
+function baseInclude() {
+  return [
+    {
+      model: Equipment,
+      as: 'equipment',
+      attributes: EQUIPMENT_SHORT,
+      include: [{ model: Site, as: 'site', attributes: ['id', 'code', 'name'] }],
+    },
+    {
+      model: RequestAssignee,
+      as: 'assignments',
+      attributes: ['id', 'technicianId', 'role', 'hours'],
+      include: [
+        {
+          model: Technician,
+          as: 'technician',
+          attributes: ['id', 'fullName', 'specialization', 'employeeNumber'],
+        },
+      ],
+    },
+  ];
 }
 
 export const requestsRepository = {
-  async findAll(query) {
-    const items = await loadAll();
-    return applyQuery(items, query);
+  async findAll({ filters = {}, sort = {}, page = 1, limit = 10 }) {
+    const where = {};
+    if (filters.equipmentId) where.equipmentId = filters.equipmentId;
+    if (filters.status) where.status = filters.status;
+    if (filters.priority) where.priority = filters.priority;
+    if (filters.plannedFrom || filters.plannedTo) {
+      where.plannedAt = {};
+      if (filters.plannedFrom) where.plannedAt[Op.gte] = filters.plannedFrom;
+      if (filters.plannedTo) where.plannedAt[Op.lte] = filters.plannedTo;
+    }
+
+    const offset = (page - 1) * limit;
+
+    const { rows, count } = await MaintenanceRequest.findAndCountAll({
+      where,
+      attributes: REQUEST_ATTRIBUTES,
+      include: baseInclude(),
+      order: buildOrder(sort),
+      limit,
+      offset,
+      distinct: true,
+    });
+
+    return { data: rows, total: count, page, limit };
   },
 
   async findById(id) {
-    const items = await loadAll();
-    return items.find((r) => r.id === id) ?? null;
+    return MaintenanceRequest.findByPk(id, {
+      attributes: REQUEST_ATTRIBUTES,
+      include: baseInclude(),
+    });
   },
 
   async findByEquipmentId(equipmentId, query = {}) {
-    const items = await loadAll();
-    const only = items.filter((r) => r.equipmentId === equipmentId);
-    return applyQuery(only, query);
+    return this.findAll({
+      ...query,
+      filters: { ...(query.filters ?? {}), equipmentId },
+    });
   },
 
   async findOpenByEquipmentId(equipmentId) {
-    const items = await loadAll();
-    return items.filter(
-      (r) => r.equipmentId === equipmentId && (r.status === 'new' || r.status === 'in_progress')
-    );
+    return MaintenanceRequest.findAll({
+      where: {
+        equipmentId,
+        status: { [Op.in]: ['new', 'in_progress'] },
+      },
+      attributes: ['id'],
+    });
   },
 
   async create(data) {
-    const items = await loadAll();
-    const now = new Date().toISOString();
-    const item = {
-      id: uuid(),
-      ...data,
-      status: data.status ?? 'new',
-      createdAt: now,
-      updatedAt: now,
-    };
-    items.push(item);
-    await saveAll(items);
-    return item;
+    return withSequelizeErrors(() =>
+      MaintenanceRequest.create({
+        equipmentId: data.equipmentId,
+        title: data.title,
+        description: data.description,
+        priority: data.priority,
+        status: data.status ?? 'new',
+        plannedAt: data.plannedAt,
+        author: data.author ?? 'system',
+      })
+    );
   },
 
   async update(id, patch) {
-    const items = await loadAll();
-    const index = items.findIndex((r) => r.id === id);
-    if (index === -1) return null;
-    items[index] = {
-      ...items[index],
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveAll(items);
-    return items[index];
+    return withSequelizeErrors(async () => {
+      const item = await MaintenanceRequest.findByPk(id);
+      if (!item) return null;
+      const allowed = ['title', 'description', 'priority', 'plannedAt'];
+      for (const key of allowed) {
+        if (patch[key] !== undefined) item[key] = patch[key];
+      }
+      await item.save();
+      return item;
+    });
   },
 
   async delete(id) {
-    const items = await loadAll();
-    const index = items.findIndex((r) => r.id === id);
-    if (index === -1) return false;
-    items.splice(index, 1);
-    await saveAll(items);
-    return true;
+    return withSequelizeErrors(async () => {
+      const count = await MaintenanceRequest.destroy({ where: { id } });
+      return count > 0;
+    });
   },
 };
