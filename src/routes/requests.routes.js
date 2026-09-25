@@ -7,6 +7,8 @@ import {
   changeStatusSchema,
   listRequestSchema,
   idParamSchema,
+  assignTeamSchema,
+  assigneeParamsSchema,
 } from '../validators/request.validator.js';
 
 export const requestsRouter = Router();
@@ -21,3 +23,7 @@ requestsRouter.patch(
   requestsController.changeStatus
 );
 requestsRouter.delete('/:id', validate(idParamSchema), requestsController.delete);
+requestsRouter.get('/:id/assignees', validate(idParamSchema), requestsController.listAssignees);
+requestsRouter.post('/:id/assignees', validate(assignTeamSchema), requestsController.assignTeam);
+requestsRouter.delete('/:id/assignees/:userId', validate(assigneeParamsSchema), requestsController.removeAssignee);
+requestsRouter.get('/:id/history', validate(idParamSchema), requestsController.listHistory);
