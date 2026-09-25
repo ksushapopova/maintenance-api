@@ -35,6 +35,18 @@ export default function defineEquipment(sequelize) {
         allowNull: false,
         field: 'installed_at',
       },
+      createdAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'created_at',
+        defaultValue: DataTypes.NOW,
+        },
+      updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+        defaultValue: DataTypes.NOW,
+        },
     },
     {
       tableName: 'equipment',

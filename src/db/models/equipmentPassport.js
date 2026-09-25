@@ -27,6 +27,18 @@ export default function defineEquipmentPassport(sequelize) {
         allowNull: true,
         field: 'last_verified_at',
       },
+      createdAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'created_at',
+        defaultValue: DataTypes.NOW,
+      },
+      updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+        defaultValue: DataTypes.NOW,
+      },
     },
     {
       tableName: 'equipment_passports',

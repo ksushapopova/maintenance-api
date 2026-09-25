@@ -1,101 +1,125 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { v4 as uuid } from 'uuid';
+import { Op } from 'sequelize';
 
-const DATA_DIR = join(process.cwd(), 'data');
-const FILE = join(DATA_DIR, 'equipment.json');
+import {
+  Equipment,
+  Site,
+  EquipmentPassport,
+  MaintenanceRequest,
+} from '../db/models/index.js';
+import { withSequelizeErrors } from './errors.js';
 
-async function loadAll() {
-  try {
-    const raw = await readFile(FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    throw err;
-  }
+const SORTABLE = ['name', 'serialNumber', 'status', 'installedAt', 'createdAt'];
+
+function buildOrder(sort) {
+  const field = sort?.field && SORTABLE.includes(sort.field) ? sort.field : 'createdAt';
+  const dir = sort?.order === 'desc' ? 'DESC' : 'ASC';
+  return [[field, dir]];
 }
 
-async function saveAll(items) {
-  await mkdir(DATA_DIR, { recursive: true });
-  await writeFile(FILE, JSON.stringify(items, null, 2), 'utf8');
-}
+const EQUIPMENT_ATTRIBUTES = [
+  'id', 'siteId', 'name', 'type', 'serialNumber', 'status', 'installedAt',
+  'createdAt', 'updatedAt',
+];
 
-function applyQuery(items, { filters = {}, sort = {}, page = 1, limit = 10 }) {
-  let result = [...items];
+const SITE_ATTRIBUTES = ['id', 'name', 'code', 'region', 'lat', 'lon'];
 
-  if (filters.status) result = result.filter((e) => e.status === filters.status);
-  if (filters.type) result = result.filter((e) => e.type === filters.type);
-  if (filters.search) {
-    const q = String(filters.search).toLowerCase();
-    result = result.filter(
-      (e) =>
-        e.name.toLowerCase().includes(q) ||
-        e.serialNumber.toLowerCase().includes(q)
-    );
-  }
-  if (sort.field) {
-    const dir = sort.order === 'desc' ? -1 : 1;
-    result.sort((a, b) => {
-      if (a[sort.field] === b[sort.field]) return 0;
-      return a[sort.field] > b[sort.field] ? dir : -dir;
-    });
-  }
-
-  const total = result.length;
-  const start = (page - 1) * limit;
-  const data = result.slice(start, start + limit);
-
-  return { data, total, page, limit };
-}
+const PASSPORT_ATTRIBUTES = [
+  'id', 'equipmentId', 'manufacturer', 'model', 'ratedPowerKw', 'lastVerifiedAt',
+];
 
 export const equipmentRepository = {
-  async findAll(query) {
-    const items = await loadAll();
-    return applyQuery(items, query);
+  async findAll({ filters = {}, sort = {}, page = 1, limit = 10 }) {
+    const where = {};
+    if (filters.status) where.status = filters.status;
+    if (filters.type) where.type = filters.type;
+    if (filters.siteId) where.siteId = filters.siteId;
+    if (filters.search) {
+      where[Op.or] = [
+        { name: { [Op.iLike]: `%${filters.search}%` } },
+        { serialNumber: { [Op.iLike]: `%${filters.search}%` } },
+      ];
+    }
+
+    const offset = (page - 1) * limit;
+
+    const { rows, count } = await Equipment.findAndCountAll({
+      where,
+      attributes: EQUIPMENT_ATTRIBUTES,
+      include: [
+        { model: Site, as: 'site', attributes: SITE_ATTRIBUTES },
+        {
+          model: EquipmentPassport, as: 'passport',
+          attributes: PASSPORT_ATTRIBUTES, required: false,
+        },
+      ],
+      order: buildOrder(sort),
+      limit,
+      offset,
+      distinct: true,
+    });
+
+    return { data: rows, total: count, page, limit };
   },
 
   async findById(id) {
-    const items = await loadAll();
-    return items.find((e) => e.id === id) ?? null;
+    return Equipment.findByPk(id, {
+      attributes: EQUIPMENT_ATTRIBUTES,
+      include: [
+        { model: Site, as: 'site', attributes: SITE_ATTRIBUTES },
+        {
+          model: EquipmentPassport, as: 'passport',
+          attributes: PASSPORT_ATTRIBUTES, required: false,
+        },
+      ],
+    });
   },
 
   async findBySerialNumber(serialNumber) {
-    const items = await loadAll();
-    return items.find((e) => e.serialNumber === serialNumber) ?? null;
+    return Equipment.findOne({
+      where: { serialNumber },
+      attributes: EQUIPMENT_ATTRIBUTES,
+    });
   },
 
   async create(data) {
-    const items = await loadAll();
-    const item = {
-      id: uuid(),
-      ...data,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    items.push(item);
-    await saveAll(items);
-    return item;
+    return withSequelizeErrors(() =>
+      Equipment.create({
+        siteId: data.siteId,
+        name: data.name,
+        type: data.type,
+        serialNumber: data.serialNumber,
+        status: data.status,
+        installedAt: data.installedAt,
+      })
+    );
   },
 
   async update(id, patch) {
-    const items = await loadAll();
-    const index = items.findIndex((e) => e.id === id);
-    if (index === -1) return null;
-    items[index] = {
-      ...items[index],
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveAll(items);
-    return items[index];
+    return withSequelizeErrors(async () => {
+      const item = await Equipment.findByPk(id);
+      if (!item) return null;
+      const allowed = ['name', 'type', 'serialNumber', 'status', 'installedAt', 'siteId'];
+      for (const key of allowed) {
+        if (patch[key] !== undefined) item[key] = patch[key];
+      }
+      await item.save();
+      return item;
+    });
   },
 
   async delete(id) {
-    const items = await loadAll();
-    const index = items.findIndex((e) => e.id === id);
-    if (index === -1) return false;
-    items.splice(index, 1);
-    await saveAll(items);
-    return true;
+    return withSequelizeErrors(async () => {
+      const count = await Equipment.destroy({ where: { id } });
+      return count > 0;
+    });
+  },
+
+  async countOpenRequests(equipmentId) {
+    return MaintenanceRequest.count({
+      where: {
+        equipmentId,
+        status: { [Op.in]: ['new', 'in_progress'] },
+      },
+    });
   },
 };

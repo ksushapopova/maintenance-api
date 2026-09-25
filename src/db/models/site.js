@@ -14,6 +14,18 @@ export default function defineSite(sequelize) {
       region: { type: DataTypes.STRING(100), allowNull: false },
       lat: { type: DataTypes.DECIMAL(9, 6), allowNull: false },
       lon: { type: DataTypes.DECIMAL(9, 6), allowNull: false },
+      createdAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'created_at',
+        defaultValue: DataTypes.NOW,
+      },
+      updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        field: 'updated_at',
+        defaultValue: DataTypes.NOW,
+      },
     },
     {
       tableName: 'sites',
