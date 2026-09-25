@@ -54,10 +54,11 @@ export const requestsController = {
     res.json(item);
   }),
 
-  changeStatus: asyncHandler(async (req, res) => {
+    changeStatus: asyncHandler(async (req, res) => {
     const id = req.validated?.params?.id ?? req.params.id;
     const newStatus = req.validated?.body?.status ?? req.body.status;
-    const item = await requestsService.changeStatus(id, newStatus);
+    const changedBy = req.get('X-User') ?? 'system';
+    const item = await requestsService.changeStatus(id, newStatus, changedBy);
     res.json(item);
   }),
 
@@ -65,5 +66,29 @@ export const requestsController = {
     const id = req.validated?.params?.id ?? req.params.id;
     await requestsService.delete(id);
     res.status(204).end();
+  }),
+
+  listAssignees: asyncHandler(async (req, res) => {
+    const list = await requestsService.listAssignees(req.validated?.params?.id ?? req.params.id);
+    res.json({ data: list });
+  }),
+
+  assignTeam: asyncHandler(async (req, res) => {
+    const id = req.validated?.params?.id ?? req.params.id;
+    const assignees = req.validated?.body?.assignees ?? req.body.assignees;
+    const list = await requestsService.assignTeam(id, assignees);
+    res.json({ data: list });
+  }),
+
+  removeAssignee: asyncHandler(async (req, res) => {
+    const { id, userId } = req.validated?.params ?? req.params;
+    await requestsService.removeAssignee(id, userId);
+    res.status(204).end();
+  }),
+
+  listHistory: asyncHandler(async (req, res) => {
+    const id = req.validated?.params?.id ?? req.params.id;
+    const list = await requestsService.listHistory(id);
+    res.json({ data: list });
   }),
 };
