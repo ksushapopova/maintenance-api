@@ -448,3 +448,199 @@ HTML-страница
 
 - Список заявок — `GET /api/requests`.
 - Создание заявки — `POST /api/requests` с заголовком `X-API-Key`.
+
+---
+
+## Работа с базой данных
+
+ Требования
+
+- PostgreSQL 16+ (разработано и протестировано на 18).
+- Node.js 20+.
+- Sequelize для ORM и миграций.
+
+ Переменные окружения
+
+Добавлены к существующим:
+
+| Переменная        | По умолчанию     | Назначение |
+|-------------------|------------------|------------|
+| `DB_HOST`         | `localhost`      | Хост PostgreSQL |
+| `DB_PORT`         | `5432`           | Порт PostgreSQL |
+| `DB_NAME`         | `maintenance`    | Имя базы данных |
+| `DB_USER`         | `maintenance`    | Пользователь БД |
+| `DB_PASSWORD`     | `maintenance`    | Пароль |
+| `DB_POOL_MAX`     | `10`             | Максимум соединений в пуле |
+| `DB_POOL_MIN`     | `0`              | Минимум соединений |
+| `DB_POOL_ACQUIRE` | `30000`          | Таймаут получения соединения, мс |
+| `DB_POOL_IDLE`    | `10000`          | Таймаут простоя соединения, мс |
+| `DB_LOGGING`      | `false`          | Логировать SQL-запросы |
+
+Основные связи:
+
+| Связь | Тип | Реализация |
+|---|---|---|
+| Site → Equipment | 1:N | `equipment.site_id` FK `ON DELETE RESTRICT` |
+| Equipment → EquipmentPassport | 1:1 | `equipment_passports.equipment_id` UNIQUE, FK `ON DELETE CASCADE` |
+| Equipment → MaintenanceRequest | 1:N | `maintenance_requests.equipment_id` FK `ON DELETE RESTRICT` |
+| MaintenanceRequest → RequestStatusHistory | 1:N | `request_status_history.request_id` FK `ON DELETE CASCADE` |
+| MaintenanceRequest ↔ Technician | N:M | через `request_assignees` с полями `role` и `hours` |
+
+
+Уникальные ограничения:
+
+- `sites.code`
+- `equipment.serial_number`
+- `technicians.employee_number`
+- `equipment_passports.equipment_id`
+- `request_assignees (request_id, technician_id)` — пара «заявка-специалист» уникальна.
+
+ Порядок запуска с нуля
+
+```bash
+# 1. Клонировать и установить зависимости
+git clone git@github.com:ksushapopova/maintenance-api.git
+cd maintenance-api
+npm install
+
+# 2. Создать пользователя и БД в PostgreSQL
+psql -U postgres <<'SQL'
+CREATE USER maintenance WITH PASSWORD 'maintenance';
+CREATE DATABASE maintenance OWNER maintenance;
+CREATE DATABASE maintenance_test OWNER maintenance;
+SQL
+
+# 3. Настроить окружение
+cp .env.example .env
+# при необходимости отредактировать .env
+
+# 4. Применить миграции
+npm run db:migrate
+
+# 5. Наполнить сидами
+npm run db:seed
+
+# 6. Запустить приложение
+npm run dev
+```
+
+После запуска сервер будет доступен на `http://localhost:3000`.
+
+Проверка:
+
+```bash
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/equipment?limit=3
+curl http://localhost:3000/api/requests?limit=3
+```
+
+ Работа с миграциями
+
+```bash
+npm run db:migrate          # применить все миграции
+npm run db:migrate:undo     # откатить все миграции
+npm run db:migrate:redo     # откатить и применить заново
+npm run db:seed             # применить все сиды
+npm run db:seed:undo        # откатить сиды
+npm run db:reset            # undo + migrate + seed
+```
+
+ Полный откат схемы
+
+```bash
+# 1. Откатить миграции (все таблицы удаляются)
+npm run db:migrate:undo
+
+# 2. Если нужно удалить и БД
+psql -U postgres -c "DROP DATABASE maintenance;"
+psql -U postgres -c "DROP USER maintenance;"
+
+# 3. Полный сброс контейнера (если PostgreSQL в Docker — не наш случай)
+# docker compose down -v
+```
+
+Аналитические отчёты
+
+Отчёт по нагрузке на оборудование
+
+`GET /api/reports/equipment-load`
+
+Реализован прямым SQL-запросом с `JOIN` нескольких таблиц и агрегатными функциями.
+
+Параметры (query):
+
+| Параметр | Тип | Описание |
+|---|---|---|
+| `from` | ISO-date | Начало периода |
+| `to` | ISO-date | Конец периода |
+| `minRequests` | integer ≥ 0 | Минимальное число заявок (фильтрация групп через HAVING) |
+
+Возвращает по каждой единице оборудования:
+
+- число заявок за период;
+- число закрытых заявок;
+- суммарные плановые трудозатраты (часы);
+- дату последнего обслуживания.
+
+ Сводка по площадке   `GET /api/sites/:id/summary`
+
+Возвращает:
+
+- количество заявок в разрезе статусов (`byStatus`);
+- количество заявок в разрезе приоритетов (`byPriority`);
+- среднее время закрытия заявок в часах (`avgCloseHours`).
+
+Пример:
+
+```bash
+curl "http://localhost:3000/api/sites/11111111-1111-1111-1111-111111111111/summary"
+```
+
+Транзакции
+
+Следующие операции выполняются в транзакции с откатом при любой ошибке:
+
+1. Смена статуса заявки (`PATCH /api/requests/:id/status`):
+   - блокировка строки заявки (`SELECT ... FOR UPDATE` через `lock: t.LOCK.UPDATE`);
+   - проверка допустимости перехода;
+   - запрет перехода в `in_progress` без назначенных исполнителей (409);
+   - обновление статуса заявки;
+   - добавление записи в `request_status_history`.
+
+2. Назначение бригады (`POST /api/requests/:id/assignees`):
+   - проверка существования заявки и специалистов;
+   - проверка: ровно один `lead`;
+   - удаление прежних назначений;
+   - вставка новых.
+
+Демонстрация отката:
+
+Попробуйте назначить бригаду с несуществующим `technicianId`. Транзакция упадёт на проверке специалистов, `replaceAll` не выполнится, прежние назначения останутся нетронутыми.
+
+```bash
+curl -X POST "http://localhost:3000/api/requests/<id>/assignees" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-secret-key" \
+  -d '{"assignees":[{"technicianId":"00000000-0000-0000-0000-000000000000","role":"lead","hours":4}]}'
+# → 404, прежние назначения целы
+```
+
+ Безопасность
+
+- Все данные БД — только в `.env` (в репозитории только `.env.example`).
+- Прямые SQL-запросы используют `replacements` (bind), конкатенация пользовательского ввода запрещена.
+- Поля сортировки проверяются по белому списку.
+- Значения `limit`/`offset` валидируются Joi (limit ≤ 100).
+- В production-режиме внутренние сообщения об ошибках в ответе не показываются.
+
+ Новые эндпоинты Кейса 3
+
+| Метод | Путь | Назначение |
+|---|---|---|
+| POST | `/api/requests/:id/assignees` | Назначить бригаду (транзакция, ровно один lead) |
+| DELETE | `/api/requests/:id/assignees/:userId` | Снять специалиста |
+| GET | `/api/requests/:id/history` | История изменений статуса |
+| GET | `/api/sites/:id/summary` | Сводка по площадке |
+| GET | `/api/reports/equipment-load` | Нагрузка на оборудование (raw SQL) |
+
+Все существующие эндпоинты Кейса 2 сохранены без изменения контракта
