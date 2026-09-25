@@ -36,17 +36,11 @@ export default function defineRequestStatusHistory(sequelize) {
         defaultValue: DataTypes.NOW,
         field: 'changed_at',
       },
-      updatedAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        field: 'updated_at',
-        defaultValue: DataTypes.NOW,
-      },
     },
     {
       tableName: 'request_status_history',
       underscored: true,
-      timestamps: false, 
+      timestamps: false,
     }
   );
 
