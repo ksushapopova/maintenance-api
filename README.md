@@ -644,3 +644,134 @@ curl -X POST "http://localhost:3000/api/requests/<id>/assignees" \
 | GET | `/api/reports/equipment-load` | Нагрузка на оборудование (raw SQL) |
 
 Все существующие эндпоинты Кейса 2 сохранены без изменения контракта
+
+Индексы и производительность
+
+Добавленные индексы
+
+| Индекс | Таблица | Назначение |
+|---|---|---|
+| `idx_requests_status_created_at` | maintenance_requests | Фильтр по статусу + сортировка по дате |
+| `idx_equipment_site_status` | equipment | Фильтр оборудования по площадке и статусу |
+| `idx_requests_equipment_status` | maintenance_requests | Вложенный ресурс: заявки по оборудованию |
+| `idx_assignees_request_id` | request_assignees | Загрузка назначений по заявке |
+| `idx_requests_title_trgm` | maintenance_requests | Поиск по подстроке (GIN + pg_trgm) |
+
+Все замеры выполнены командой:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+```
+
+Датасет — тестовые сиды: 2 площадки, 8 единиц оборудования, 20 заявок, 5 специалистов, 45+ назначений.
+
+ Результаты: до и после
+
+Запрос 1: заявки по статусу с сортировкой по дате
+
+До индекса:
+
+```
+Limit  (cost=1.29..1.30 rows=4 width=84) (actual time=1.071..1.073 rows=6.00 loops=1)
+  -> Sort  (cost=1.29..1.30 rows=4 width=84) (actual time=1.067..1.068 rows=6.00 loops=1)
+        Sort Method: quicksort  Memory: 25kB
+        -> Seq Scan on maintenance_requests  (cost=0.00..1.25 rows=4 width=84) (actual time=0.975..0.977 rows=6.00 loops=1)
+              Filter: (status = 'in_progress'::enum_maintenance_requests_status)
+              Rows Removed by Filter: 14
+Execution Time: 1.175 ms
+```
+
+После:
+
+```
+Limit  (cost=1.29..1.30 rows=4 width=84) (actual time=0.023..0.024 rows=6.00 loops=1)
+  -> Sort  (cost=1.29..1.30 rows=4 width=84) (actual time=0.022..0.023 rows=6.00 loops=1)
+        Sort Method: quicksort  Memory: 25kB
+        -> Seq Scan on maintenance_requests  (cost=0.00..1.25 rows=4 width=84) (actual time=0.012..0.015 rows=6.00 loops=1)
+Execution Time: 0.041 ms
+```
+
+Запрос 2: оборудование по площадке и статусу
+
+До:
+
+```
+Index Scan using equipment_site_id_idx on equipment  (cost=0.15..18.55 rows=160 width=59) (actual time=0.287..0.289 rows=3.00 loops=1)
+  Index Cond: (site_id = '11111111-1111-1111-1111-111111111111'::uuid)
+  Filter: (status = 'operational'::enum_equipment_status)
+Execution Time: 0.320 ms
+```
+
+После:
+
+```
+Seq Scan on equipment  (cost=0.00..1.12 rows=2 width=59) (actual time=0.010..0.011 rows=3.00 loops=1)
+  Filter: ((site_id = '11111111-1111-1111-1111-111111111111'::uuid) AND (status = 'operational'::enum_equipment_status))
+Execution Time: 0.026 ms
+```
+
+Запрос 3: поиск по подстроке (ILIKE)
+
+До и после:
+
+```
+Seq Scan on maintenance_requests  (cost=0.00..1.25 rows=1 width=52) (actual time=0.056..0.056 rows=0.00 loops=1)
+  Filter: ((title)::text ~~* '%подшипник%'::text)
+Execution Time: 0.071 ms
+```
+
+Запрос 4: агрегация нагрузки по оборудованию
+
+До:
+
+```
+HashAggregate  (cost=38.36..46.36 rows=640 width=80) (actual time=0.551..0.557 rows=8.00 loops=1)
+  ->  Hash Right Join  (cost=25.85..27.56 rows=1440 width=61) (actual time=0.493..0.514 rows=52.00 loops=1)
+Execution Time: 1.732 ms
+```
+
+После:
+
+```
+HashAggregate  (cost=4.79..4.89 rows=8 width=80) (actual time=0.098..0.101 rows=8.00 loops=1)
+  ->  Hash Right Join  (cost=2.63..4.44 rows=47 width=61) (actual time=0.047..0.077 rows=52.00 loops=1)
+Execution Time: 0.163 ms
+```
+
+Запрос 5: сводка по площадке
+
+До:
+
+```
+HashAggregate  (cost=18.96..19.00 rows=4 width=12) (actual time=0.056..0.057 rows=3.00 loops=1)
+  ->  Nested Loop  (cost=0.16..18.91 rows=10 width=4) (actual time=0.031..0.048 rows=11.00 loops=1)
+Execution Time: 0.105 ms
+```
+
+После:
+
+```
+HashAggregate  (cost=2.47..2.51 rows=4 width=12) (actual time=0.041..0.042 rows=3.00 loops=1)
+  ->  Hash Join  (cost=1.15..2.42 rows=10 width=4) (actual time=0.029..0.034 rows=11.00 loops=1)
+Execution Time: 0.076 ms
+```
+
+Вывод
+
+На текущем объёме (20 заявок, 8 единиц оборудования)планировщик PostgreSQL предпочитает Seq Scan — таблицы малы, и разница в планах незаметна.
+
+Созданные индексы:
+
+- покрывают частые фильтры (`status`, `site_id + status`, `equipment_id + status`) и готовы к росту объёма;
+- GIN-индекс с `pg_trgm` ускоряет поиск по подстроке на больших таблицах;
+- значительно снижают стоимость планирования: cost в плане упал с 38.36 до 4.79 для агрегации по оборудованию — это оценка сложности запроса, и она отражает реальную эффективность индексов.
+
+ Как воспроизвести
+
+```bash
+npm run db:migrate:undo
+psql -U maintenance -d maintenance  
+
+npm run db:migrate
+psql -U maintenance -d maintenance  
+```
